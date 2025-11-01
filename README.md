@@ -17,7 +17,7 @@
 ### 方式一: 全局安装 (推荐)
 
 ```bash
-npm install -g zlink
+npm install -g @pengzi/zlink
 ```
 
 安装后可以在任何地方使用 `zlink` 命令。
@@ -196,7 +196,7 @@ MIT License
 A: 不会。工具只管理标记区域内的别名,不会影响其他配置。
 
 ### Q: 如何卸载?
-A: 运行 `npm uninstall -g zlink`,然后手动从 ~/.zshrc 中删除管理区域。
+A: 运行 `npm uninstall -g @pengzi/zlink`,然后手动从 ~/.zshrc 中删除管理区域。
 
 ### Q: 支持 bash 吗?
 A: 当前版本仅支持 zsh,后续版本会考虑支持 bash。

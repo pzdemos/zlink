@@ -1,10 +1,10 @@
 {
-  "name": "alias-manager",
-  "version": "1.0.0",
+  "name": "@pengzi/zlink",
+  "version": "1.0.1",
   "description": "Mac shell 别名管理工具 - 轻松管理你的 zsh 别名",
   "main": "index.js",
   "bin": {
-    "zlink": "./index.js"
+    "zlink": "index.js"
   },
   "scripts": {
     "start": "node index.js",
@@ -25,7 +25,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/pzdemos/zlink"
+    "url": "git+https://github.com/pzdemos/zlink.git"
   },
   "bugs": {
     "url": "https://github.com/pzdemos/zlink/issues"
