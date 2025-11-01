@@ -1,0 +1,34 @@
+{
+  "name": "alias-manager",
+  "version": "1.0.0",
+  "description": "Mac shell 别名管理工具 - 轻松管理你的 zsh 别名",
+  "main": "index.js",
+  "bin": {
+    "zlink": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "alias",
+    "zsh",
+    "shell",
+    "mac",
+    "cli",
+    "terminal"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "your-repo-url"
+  },
+  "bugs": {
+    "url": "your-issues-url"
+  },
+  "homepage": "your-homepage-url"
+}
