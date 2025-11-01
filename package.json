@@ -18,17 +18,17 @@
     "cli",
     "terminal"
   ],
-  "author": "Your Name",
+  "author": "zhaojiu",
   "license": "MIT",
   "engines": {
     "node": ">=14.0.0"
   },
   "repository": {
     "type": "git",
-    "url": "your-repo-url"
+    "url": "https://github.com/pzdemos/zlink"
   },
   "bugs": {
-    "url": "your-issues-url"
+    "url": "https://github.com/pzdemos/zlink/issues"
   },
-  "homepage": "your-homepage-url"
+  "homepage": "https://www.haoaiganfan.top"
 }

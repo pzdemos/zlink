@@ -1,4 +1,4 @@
-# Alias Manager - Mac 别名管理工具 🚀
+# zlink Manager - Mac 别名管理工具 🚀
 
 一个简单易用的命令行工具,用于管理 Mac 上的 zsh shell 别名。
 
@@ -17,23 +17,23 @@
 ### 方式一: 全局安装 (推荐)
 
 ```bash
-npm install -g alias-manager
+npm install -g zlink
 ```
 
-安装后可以在任何地方使用 `alias-mgr` 命令。
+安装后可以在任何地方使用 `zlink` 命令。
 
 ### 方式二: 本地开发
 
 ```bash
 # 克隆项目
-git clone <your-repo-url>
-cd alias-manager
+git clone <https://github.com/pzdemos/zlink>
+cd zlink
 
 # 链接到全局
 npm link
 
 # 运行
-alias-mgr
+zlink
 ```
 
 ## 🎯 使用方法
@@ -41,7 +41,7 @@ alias-mgr
 ### 启动工具
 
 ```bash
-alias-mgr
+zlink
 ```
 
 ### 主菜单
@@ -164,7 +164,7 @@ alias-manager/
 
 ```bash
 # === Managed Aliases Start ===
-alias bt='ssh root@192.168.1.100'
+alias bt='ssh root@xx.168.1.100'
 alias gs='git status'
 # === Managed Aliases End ===
 ```
@@ -196,7 +196,7 @@ MIT License
 A: 不会。工具只管理标记区域内的别名,不会影响其他配置。
 
 ### Q: 如何卸载?
-A: 运行 `npm uninstall -g alias-manager`,然后手动从 ~/.zshrc 中删除管理区域。
+A: 运行 `npm uninstall -g zlink`,然后手动从 ~/.zshrc 中删除管理区域。
 
 ### Q: 支持 bash 吗?
 A: 当前版本仅支持 zsh,后续版本会考虑支持 bash。
@@ -206,4 +206,4 @@ A: 别名存储在 ~/.zshrc 中,建议定期备份该文件。
 
 ---
 
-Made with ❤️ for Mac developers
+Made with zhaojiu for Mac developers
