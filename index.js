@@ -585,21 +585,17 @@ class AliasManager {
     
     // 选择执行方式
     const execOptions = [
-      { label: '🔄 退出工具并执行命令', value: 'exit' },
       { label: '🆕 在新终端窗口中执行', value: 'new' },
       { label: '📋 复制命令到剪贴板', value: 'copy' },
       { label: '❌ 取消', value: null }
     ];
     
     const execTitle = '\n请选择执行方式:';
-    const execMode = await this.selectOption(execTitle, execOptions, 0); // 默认选中第一个（退出执行）
+    const execMode = await this.selectOption(execTitle, execOptions, 0); // 默认选中第一个（新终端）
     
     switch (execMode) {
       case 'new':
         await this.executeInNewTerminal(alias);
-        break;
-      case 'exit':
-        await this.executeAndExit(alias);
         break;
       case 'copy':
         await this.copyToClipboard(alias.command);
@@ -658,50 +654,6 @@ class AliasManager {
     } catch (error) {
       console.error('❌ 执行失败:', error.message);
     }
-  }
-
-  // 退出工具并执行命令
-  async executeAndExit(alias) {
-    const confirm = await this.question('\n确认执行? (Y/n): ');
-    // 默认为 Y，用户直接回车或输入 y/Y 都确认
-    if (confirm.trim() && confirm.toLowerCase() !== 'y') {
-      console.log('❌ 已取消');
-      return;
-    }
-    
-    // 写入临时脚本文件
-    const tempScript = `/tmp/zlink_exec_${Date.now()}.sh`;
-    const scriptContent = `#!/bin/zsh
-# 临时脚本 - 由 zlink 生成
-echo "🚀 正在执行: ${alias.name}"
-echo "─────────────────────────────────────────"
-${alias.command}
-echo "─────────────────────────────────────────"
-echo "✅ 命令执行完成"
-echo ""
-echo "按任意键继续..."
-read -n 1
-rm -f ${tempScript}
-`;
-    
-    fs.writeFileSync(tempScript, scriptContent);
-    fs.chmodSync(tempScript, '755');
-    
-    console.log('\n✅ 正在退出工具并执行命令...\n');
-    console.log(`如果命令未自动执行，请手动运行: ${tempScript}\n`);
-    
-    // 关闭 readline 接口
-    this.rl.close();
-    
-    // 使用 exec 替换当前进程
-    const { spawn } = require('child_process');
-    spawn('zsh', [tempScript], {
-      stdio: 'inherit',
-      detached: false
-    });
-    
-    // 退出当前进程
-    process.exit(0);
   }
 
   // 复制命令到剪贴板
