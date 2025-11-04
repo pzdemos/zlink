@@ -13,6 +13,42 @@ const execPromise = util.promisify(exec);
 const SHELL_RC = path.join(os.homedir(), '.zshrc');
 const ALIAS_MARKER_START = '# === Managed Aliases Start ===';
 const ALIAS_MARKER_END = '# === Managed Aliases End ===';
+const ALIAS_DESC_PREFIX = '# DESC:';
+
+// ANSI 颜色代码
+const colors = {
+  reset: '\x1b[0m',
+  bright: '\x1b[1m',
+  dim: '\x1b[2m',
+  
+  // 前景色
+  red: '\x1b[31m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  blue: '\x1b[34m',
+  magenta: '\x1b[35m',
+  cyan: '\x1b[36m',
+  white: '\x1b[37m',
+  gray: '\x1b[90m',
+  
+  // 背景色
+  bgRed: '\x1b[41m',
+  bgGreen: '\x1b[42m',
+  bgYellow: '\x1b[43m',
+  bgBlue: '\x1b[44m',
+};
+
+// 颜色辅助函数
+const color = {
+  name: (text) => `${colors.cyan}${colors.bright}${text}${colors.reset}`,
+  command: (text) => `${colors.yellow}${text}${colors.reset}`,
+  desc: (text) => `${colors.gray}${text}${colors.reset}`,
+  success: (text) => `${colors.green}${text}${colors.reset}`,
+  error: (text) => `${colors.red}${text}${colors.reset}`,
+  warning: (text) => `${colors.yellow}${text}${colors.reset}`,
+  info: (text) => `${colors.blue}${text}${colors.reset}`,
+  label: (text) => `${colors.magenta}${text}${colors.reset}`,
+};
 
 class AliasManager {
   constructor() {
@@ -31,6 +67,113 @@ class AliasManager {
     });
   }
 
+  // 创建单选框选择器
+  async selectOption(title, options, defaultIndex = 0) {
+    return new Promise((resolve) => {
+      let selectedIndex = defaultIndex;
+      const stdin = process.stdin;
+      let lineCount = 0;
+      
+      // 设置原始模式以捕获单个按键
+      if (stdin.isTTY) {
+        stdin.setRawMode(true);
+      }
+      stdin.resume();
+      stdin.setEncoding('utf8');
+      
+      // 移动光标到指定行
+      const moveCursor = (lines) => {
+        if (lines > 0) {
+          process.stdout.write(`\x1b[${lines}A`); // 向上移动
+        } else if (lines < 0) {
+          process.stdout.write(`\x1b[${-lines}B`); // 向下移动
+        }
+      };
+      
+      // 清除从当前位置开始的多行
+      const clearLines = (count) => {
+        for (let i = 0; i < count; i++) {
+          process.stdout.write('\x1b[2K'); // 清除当前行
+          if (i < count - 1) {
+            process.stdout.write('\x1b[1B'); // 移动到下一行
+          }
+        }
+        // 移回起始位置
+        if (count > 1) {
+          process.stdout.write(`\x1b[${count - 1}A`);
+        }
+        process.stdout.write('\r'); // 移动到行首
+      };
+      
+      // 渲染选项
+      const render = (clear = false) => {
+        if (clear && lineCount > 0) {
+          // 移动到渲染起始位置并清除
+          moveCursor(lineCount);
+          clearLines(lineCount);
+        }
+        
+        // 计算新的行数
+        lineCount = 0;
+        
+        if (!clear) {
+          console.log(title);
+          console.log();
+          lineCount += 2;
+        }
+        
+        options.forEach((option, index) => {
+          if (index === selectedIndex) {
+            console.log(`  ${color.success('▶')} ${option.label}`);
+          } else {
+            console.log(`    ${option.label}`);
+          }
+          lineCount++;
+        });
+        
+        console.log();
+        console.log(color.desc('使用 ↑↓ 方向键选择，Enter 确认，ESC/Ctrl+C 取消'));
+        lineCount += 2;
+      };
+      
+      // 初始渲染
+      render();
+      
+      // 监听按键
+      const onKeyPress = (key) => {
+        if (key === '\u001B\u005B\u0041') { // 上箭头
+          selectedIndex = selectedIndex > 0 ? selectedIndex - 1 : options.length - 1;
+          render(true);
+        } else if (key === '\u001B\u005B\u0042') { // 下箭头
+          selectedIndex = selectedIndex < options.length - 1 ? selectedIndex + 1 : 0;
+          render(true);
+        } else if (key === '\r' || key === '\n') { // 回车
+          if (stdin.isTTY) {
+            stdin.setRawMode(false);
+          }
+          stdin.pause();
+          stdin.removeListener('data', onKeyPress);
+          // 清除选择界面
+          moveCursor(lineCount);
+          clearLines(lineCount);
+          resolve(options[selectedIndex].value);
+        } else if (key === '\u001b' || key === '\u0003') { // ESC 或 Ctrl+C
+          if (stdin.isTTY) {
+            stdin.setRawMode(false);
+          }
+          stdin.pause();
+          stdin.removeListener('data', onKeyPress);
+          // 清除选择界面
+          moveCursor(lineCount);
+          clearLines(lineCount);
+          resolve(null);
+        }
+      };
+      
+      stdin.on('data', onKeyPress);
+    });
+  }
+
   // 读取所有别名
   async readAliases() {
     try {
@@ -39,6 +182,8 @@ class AliasManager {
       const aliases = [];
 
       let inManagedSection = false;
+      let nextDescription = null;
+      
       for (const line of lines) {
         if (line.includes(ALIAS_MARKER_START)) {
           inManagedSection = true;
@@ -49,15 +194,23 @@ class AliasManager {
           continue;
         }
 
+        // 检查是否是描述行
+        if (inManagedSection && line.startsWith(ALIAS_DESC_PREFIX)) {
+          nextDescription = line.substring(ALIAS_DESC_PREFIX.length).trim();
+          continue;
+        }
+
         // 匹配 alias 格式
         const match = line.match(/^\s*alias\s+([^=]+)=(['"]?)(.+)\2\s*$/);
         if (match) {
           aliases.push({
             name: match[1].trim(),
             command: match[3],
+            description: inManagedSection ? nextDescription : null,
             managed: inManagedSection,
             raw: line
           });
+          nextDescription = null; // 重置描述
         }
       }
 
@@ -103,6 +256,10 @@ class AliasManager {
       newLines.push('');
       newLines.push(ALIAS_MARKER_START);
       aliases.forEach(alias => {
+        // 如果有描述，先添加描述注释
+        if (alias.description) {
+          newLines.push(`${ALIAS_DESC_PREFIX} ${alias.description}`);
+        }
         newLines.push(`alias ${alias.name}='${alias.command}'`);
       });
       newLines.push(ALIAS_MARKER_END);
@@ -119,9 +276,9 @@ class AliasManager {
     try {
       // 注意:在 Node.js 中 source 需要用 zsh -c 来执行
       await execPromise(`zsh -c "source ${SHELL_RC}"`);
-      console.log('✅ 已重新加载 ~/.zshrc');
+      console.log(color.success('✅ 已重新加载 ~/.zshrc'));
     } catch (error) {
-      console.log('⚠️  配置已保存,请手动执行: source ~/.zshrc');
+      console.log(color.warning('⚠️  配置已保存,请手动执行: source ~/.zshrc'));
     }
   }
 
@@ -137,24 +294,30 @@ class AliasManager {
     console.log('\n📋 当前别名列表:\n');
     aliases.forEach((alias, index) => {
       const status = alias.managed ? '🔧' : '📌';
-      console.log(`${status} [${index + 1}] ${alias.name} = '${alias.command}'`);
+      const indexStr = `[${index + 1}]`;
+      console.log(`${status} ${color.info(indexStr)} ${color.name(alias.name)} = ${color.command(alias.command)}`);
+      if (alias.description) {
+        console.log(`     ${color.desc('└─ ' + alias.description)}`);
+      }
     });
-    console.log('\n🔧 = 本工具管理  📌 = 其他配置\n');
+    console.log(`\n${color.label('🔧 = 本工具管理')}  ${color.label('📌 = 其他配置')}\n`);
   }
 
   // 添加别名
   async addAlias() {
     const name = await this.question('\n请输入别名名称: ');
     if (!name) {
-      console.log('❌ 别名名称不能为空');
+      console.log(color.error('❌ 别名名称不能为空'));
       return;
     }
 
     const command = await this.question('请输入命令内容: ');
     if (!command) {
-      console.log('❌ 命令内容不能为空');
+      console.log(color.error('❌ 命令内容不能为空'));
       return;
     }
+
+    const description = await this.question('请输入命令说明 (可选): ');
 
     const aliases = await this.readAliases();
     const managedAliases = aliases.filter(a => a.managed);
@@ -173,9 +336,17 @@ class AliasManager {
       managedAliases.splice(index, 1);
     }
 
-    managedAliases.push({ name, command, managed: true });
+    managedAliases.push({ 
+      name, 
+      command, 
+      description: description || null,
+      managed: true 
+    });
     await this.saveAliases(managedAliases);
-    console.log(`\n✅ 已添加别名: ${name} = '${command}'`);
+    console.log(color.success(`\n✅ 已添加别名: `) + color.name(name) + ' = ' + color.command(`'${command}'`));
+    if (description) {
+      console.log(`   ${color.desc('说明: ' + description)}`);
+    }
   }
 
   // 修改别名
@@ -190,9 +361,13 @@ class AliasManager {
     console.log('\n📝 所有别名:\n');
     aliases.forEach((alias, index) => {
       const status = alias.managed ? '🔧' : '📌';
-      console.log(`${status} [${index + 1}] ${alias.name} = '${alias.command}'`);
+      const indexStr = `[${index + 1}]`;
+      console.log(`${status} ${color.info(indexStr)} ${color.name(alias.name)} = ${color.command(alias.command)}`);
+      if (alias.description) {
+        console.log(`     ${color.desc('└─ ' + alias.description)}`);
+      }
     });
-    console.log('\n🔧 = 本工具管理  📌 = 其他配置 (编辑后将移至工具管理)\n');
+    console.log(`\n${color.label('🔧 = 本工具管理')}  ${color.label('📌 = 其他配置 (编辑后将移至工具管理)')}\n`);
 
     const choice = await this.question('请选择要编辑的别名序号: ');
     const index = parseInt(choice) - 1;
@@ -205,13 +380,18 @@ class AliasManager {
     const alias = aliases[index];
     const wasManaged = alias.managed;
     
-    console.log(`\n当前别名: ${alias.name} = '${alias.command}'`);
+    console.log(`\n当前别名: ${color.name(alias.name)} = ${color.command(`'${alias.command}'`)}`);
+    if (alias.description) {
+      console.log(`当前说明: ${color.desc(alias.description)}`);
+    }
     
     const newName = await this.question(`新的别名名称 (留空保持 '${alias.name}'): `);
     const newCommand = await this.question(`新的命令内容 (留空保持当前命令): `);
+    const newDescription = await this.question(`新的命令说明 (留空保持当前说明): `);
 
     const finalName = newName || alias.name;
     const finalCommand = newCommand || alias.command;
+    const finalDescription = newDescription || alias.description || null;
 
     // 如果是未管理的别名,需要从原文件中删除
     if (!wasManaged) {
@@ -230,12 +410,16 @@ class AliasManager {
     // 添加编辑后的别名
     managedAliases.push({ 
       name: finalName, 
-      command: finalCommand, 
+      command: finalCommand,
+      description: finalDescription,
       managed: true 
     });
 
     await this.saveAliases(managedAliases);
-    console.log(`\n✅ 已更新别名: ${finalName} = '${finalCommand}'`);
+    console.log(color.success(`\n✅ 已更新别名: `) + color.name(finalName) + ' = ' + color.command(`'${finalCommand}'`));
+    if (finalDescription) {
+      console.log(`   ${color.desc('说明: ' + finalDescription)}`);
+    }
   }
 
   // 删除别名
@@ -250,9 +434,13 @@ class AliasManager {
     console.log('\n🗑️  所有别名:\n');
     aliases.forEach((alias, index) => {
       const status = alias.managed ? '🔧' : '📌';
-      console.log(`${status} [${index + 1}] ${alias.name} = '${alias.command}'`);
+      const indexStr = `[${index + 1}]`;
+      console.log(`${status} ${color.info(indexStr)} ${color.name(alias.name)} = ${color.command(alias.command)}`);
+      if (alias.description) {
+        console.log(`     ${color.desc('└─ ' + alias.description)}`);
+      }
     });
-    console.log('\n🔧 = 本工具管理  📌 = 其他配置 (删除后将移至工具管理)\n');
+    console.log(`\n${color.label('🔧 = 本工具管理')}  ${color.label('📌 = 其他配置')}\n`);
 
     const choice = await this.question('请选择要删除的别名序号 (多个用逗号分隔): ');
     const indices = choice.split(',').map(s => parseInt(s.trim()) - 1);
@@ -268,7 +456,7 @@ class AliasManager {
     validIndices.forEach(i => {
       const alias = aliases[i];
       const status = alias.managed ? '🔧' : '📌';
-      console.log(`  ${status} ${alias.name}`);
+      console.log(`  ${status} ${color.name(alias.name)}`);
     });
 
     const confirm = await this.question('\n确认删除? (y/n): ');
@@ -324,7 +512,8 @@ class AliasManager {
 
     const aliases = await this.readAliases();
     const results = aliases.filter(a => 
-      a.name.includes(keyword) || a.command.includes(keyword)
+      a.name.includes(keyword) || a.command.includes(keyword) || 
+      (a.description && a.description.includes(keyword))
     );
 
     if (results.length === 0) {
@@ -332,26 +521,219 @@ class AliasManager {
       return;
     }
 
-    console.log(`\n🔍 搜索结果 (共 ${results.length} 条):\n`);
+    console.log(color.info(`\n🔍 搜索结果 (共 ${results.length} 条):\n`));
     results.forEach((alias, index) => {
       const status = alias.managed ? '🔧' : '📌';
-      console.log(`${status} [${index + 1}] ${alias.name} = '${alias.command}'`);
+      const indexStr = `[${index + 1}]`;
+      console.log(`${status} ${color.info(indexStr)} ${color.name(alias.name)} = ${color.command(alias.command)}`);
+      if (alias.description) {
+        console.log(`     ${color.desc('└─ ' + alias.description)}`);
+      }
     });
     console.log();
   }
 
+  // 执行别名命令
+  async executeAlias() {
+    const aliases = await this.readAliases();
+    
+    if (aliases.length === 0) {
+      console.log('\n📭 暂无可执行的别名\n');
+      return;
+    }
+
+    // 准备选项列表
+    const aliasOptions = aliases.map((alias, index) => {
+      const status = alias.managed ? '🔧' : '📌';
+      let label = `${status} ${color.name(alias.name)}`;
+      if (alias.description) {
+        label += ` - ${color.desc(alias.description)}`;
+      } else {
+        // 如果没有描述，显示命令的简短版本
+        const shortCmd = alias.command.length > 40 
+          ? alias.command.substring(0, 37) + '...' 
+          : alias.command;
+        label += ` - ${color.command(shortCmd)}`;
+      }
+      return {
+        label: label,
+        value: alias
+      };
+    });
+
+    // 添加取消选项
+    aliasOptions.push({
+      label: '❌ 取消',
+      value: null
+    });
+
+    // 使用单选框选择别名
+    const title = color.info('🚀 选择要执行的命令:');
+    const alias = await this.selectOption(title, aliasOptions, 0);
+    
+    if (!alias) {
+      console.log('❌ 已取消');
+      return;
+    }
+    
+    // 显示命令信息
+    console.log(`\n${color.label('准备执行:')} ${color.name(alias.name)}`);
+    console.log(`${color.label('命令内容:')} ${color.command(alias.command)}`);
+    if (alias.description) {
+      console.log(`${color.label('命令说明:')} ${color.desc(alias.description)}`);
+    }
+    
+    // 选择执行方式
+    const execOptions = [
+      { label: '🔄 退出工具并执行命令', value: 'exit' },
+      { label: '🆕 在新终端窗口中执行', value: 'new' },
+      { label: '📋 复制命令到剪贴板', value: 'copy' },
+      { label: '❌ 取消', value: null }
+    ];
+    
+    const execTitle = '\n请选择执行方式:';
+    const execMode = await this.selectOption(execTitle, execOptions, 0); // 默认选中第一个（退出执行）
+    
+    switch (execMode) {
+      case 'new':
+        await this.executeInNewTerminal(alias);
+        break;
+      case 'exit':
+        await this.executeAndExit(alias);
+        break;
+      case 'copy':
+        await this.copyToClipboard(alias.command);
+        break;
+      case null:
+        console.log('❌ 已取消');
+        break;
+    }
+  }
+
+  // 在新终端窗口中执行命令
+  async executeInNewTerminal(alias) {
+    const { exec } = require('child_process');
+    
+    try {
+      // macOS 使用 Terminal.app 或 iTerm2
+      const command = alias.command;
+      
+      // 检测是否安装了 iTerm2
+      const checkITerm = 'osascript -e \'tell application "System Events" to get name of every application process\' | grep -q "iTerm"';
+      
+      exec(checkITerm, (error) => {
+        let script;
+        if (!error) {
+          // 使用 iTerm2
+          script = `osascript -e '
+            tell application "iTerm"
+              activate
+              tell current window
+                create tab with default profile
+                tell current session
+                  write text "${command.replace(/'/g, "\\'")}"
+                end tell
+              end tell
+            end tell'`;
+        } else {
+          // 使用默认 Terminal.app
+          script = `osascript -e '
+            tell application "Terminal"
+              activate
+              do script "${command.replace(/'/g, "\\'")}"
+            end tell'`;
+        }
+        
+        exec(script, (error, stdout, stderr) => {
+          if (error) {
+            console.error('❌ 无法打开新终端窗口:', error.message);
+            console.log('\n💡 提示: 你可以手动复制以下命令到终端执行:');
+            console.log(`\n${command}\n`);
+          } else {
+            console.log('✅ 已在新终端窗口中执行命令');
+          }
+        });
+      });
+      
+    } catch (error) {
+      console.error('❌ 执行失败:', error.message);
+    }
+  }
+
+  // 退出工具并执行命令
+  async executeAndExit(alias) {
+    const confirm = await this.question('\n确认执行? (Y/n): ');
+    // 默认为 Y，用户直接回车或输入 y/Y 都确认
+    if (confirm.trim() && confirm.toLowerCase() !== 'y') {
+      console.log('❌ 已取消');
+      return;
+    }
+    
+    // 写入临时脚本文件
+    const tempScript = `/tmp/zlink_exec_${Date.now()}.sh`;
+    const scriptContent = `#!/bin/zsh
+# 临时脚本 - 由 zlink 生成
+echo "🚀 正在执行: ${alias.name}"
+echo "─────────────────────────────────────────"
+${alias.command}
+echo "─────────────────────────────────────────"
+echo "✅ 命令执行完成"
+echo ""
+echo "按任意键继续..."
+read -n 1
+rm -f ${tempScript}
+`;
+    
+    fs.writeFileSync(tempScript, scriptContent);
+    fs.chmodSync(tempScript, '755');
+    
+    console.log('\n✅ 正在退出工具并执行命令...\n');
+    console.log(`如果命令未自动执行，请手动运行: ${tempScript}\n`);
+    
+    // 关闭 readline 接口
+    this.rl.close();
+    
+    // 使用 exec 替换当前进程
+    const { spawn } = require('child_process');
+    spawn('zsh', [tempScript], {
+      stdio: 'inherit',
+      detached: false
+    });
+    
+    // 退出当前进程
+    process.exit(0);
+  }
+
+  // 复制命令到剪贴板
+  async copyToClipboard(command) {
+    const { exec } = require('child_process');
+    
+    // macOS 使用 pbcopy
+    exec(`echo '${command.replace(/'/g, "'\\''")}' | pbcopy`, (error) => {
+      if (error) {
+        console.error('❌ 复制失败:', error.message);
+        console.log('\n请手动复制以下命令:');
+        console.log(`\n${command}\n`);
+      } else {
+        console.log('✅ 命令已复制到剪贴板');
+        console.log('\n💡 提示: 你可以在终端中使用 Cmd+V 粘贴执行');
+      }
+    });
+  }
+
   // 主菜单
   async showMenu() {
-    console.log('\n╔════════════════════════════════════╗');
-    console.log('║     zlink别名管理工具 v1.0.0       ║');
-    console.log('╚════════════════════════════════════╝');
+    console.log(`${colors.cyan}\n╔════════════════════════════════════╗`);
+    console.log(`║     zlink别名管理工具 v1.1.0       ║`);
+    console.log(`╚════════════════════════════════════╝${colors.reset}`);
     console.log('\n请选择操作:');
-    console.log('  1. 📋 查看所有别名');
-    console.log('  2. ➕ 添加新别名');
-    console.log('  3. ✏️  编辑别名');
-    console.log('  4. 🗑️  删除别名');
-    console.log('  5. 🔍 搜索别名');
-    console.log('  0. 👋 退出\n');
+    console.log(`  ${color.info('1.')} 📋 查看所有别名`);
+    console.log(`  ${color.info('2.')} ➕ 添加新别名`);
+    console.log(`  ${color.info('3.')} ✏️  编辑别名`);
+    console.log(`  ${color.info('4.')} 🗑️  删除别名`);
+    console.log(`  ${color.info('5.')} 🔍 搜索别名`);
+    console.log(`  ${color.info('6.')} 🚀 执行别名命令`);
+    console.log(`  ${color.info('0.')} 👋 退出\n`);
 
     const choice = await this.question('请输入选项: ');
 
@@ -370,6 +752,9 @@ class AliasManager {
         break;
       case '5':
         await this.searchAlias();
+        break;
+      case '6':
+        await this.executeAlias();
         break;
       case '0':
         console.log('\n👋 再见!\n');
