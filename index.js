@@ -676,7 +676,7 @@ class AliasManager {
   // 主菜单
   async showMenu() {
     console.log(`${colors.cyan}\n╔════════════════════════════════════╗`);
-    console.log(`║     zlink别名管理工具 v1.1.0       ║`);
+    console.log(`║     zlink别名管理工具 v1.1.1       ║`);
     console.log(`╚════════════════════════════════════╝${colors.reset}`);
     console.log('\n请选择操作:');
     console.log(`  ${color.info('1.')} 📋 查看所有别名`);
